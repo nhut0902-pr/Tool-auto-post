@@ -14,7 +14,6 @@ FACEBOOK_PAGE_ID = os.environ.get("FACEBOOK_PAGE_ID")
 # 4 Trang web cần quét
 URLS_TO_SCRAPE = [
     "https://dantri.com.vn/cong-nghe/ai-internet.html",
-    "https://vatvostudio.vn/category/artificial-intelligence/",
     
 ]
 
