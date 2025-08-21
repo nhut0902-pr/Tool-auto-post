@@ -1,0 +1,27 @@
+name: Auto Facebook Posting
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # Chạy mỗi 6 giờ
+  workflow_dispatch:        # Cho phép chạy thủ công
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4 openai facebook-sdk
+
+      - name: Run auto post
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          FACEBOOK_ACCESS_TOKEN: ${{ secrets.FACEBOOK_ACCESS_TOKEN }}
+          FACEBOOK_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
+        run: python auto_fb_post_full.py
