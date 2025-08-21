@@ -1,30 +1,32 @@
+import os
 import requests
 from bs4 import BeautifulSoup
 import json
-import openai
 import facebook
-import os
 from datetime import datetime
+import google.generativeai as genai
 
-# ====== Lấy key từ environment ======
+# ===== Khai báo môi trường =====
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 FACEBOOK_ACCESS_TOKEN = os.environ.get("FACEBOOK_ACCESS_TOKEN")
 FACEBOOK_PAGE_ID = os.environ.get("FACEBOOK_PAGE_ID")
 
-# Danh sách nhiều trang web
+# 4 Trang web cần quét
 URLS_TO_SCRAPE = [
     "https://www.24h.com.vn/cong-nghe-ai-c1101.html",
+    "https://m.cafef.vn/kinh-te-so.chn",
     "https://vatvostudio.vn/category/artificial-intelligence/",
-    "https://dantri.com.vn/cong-nghe/ai-internet.htm",
-    "https://m.cafef.vn/kinh-te-so.chn"
+    "https://dantri.com.vn/cong-nghe/ai-internet.htm"
 ]
 
 HISTORY_FILE = "posted_history.json"
 DASHBOARD_FILE = "dashboard.json"
 
-openai.api_key = GEMINI_API_KEY
+# ===== Khởi tạo Gemini SDK =====
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel("gemini-1.5-flash")
 
-# ====== Lịch sử bài đã đăng ======
+# =====Lịch sử bài đã đăng =====
 def load_history():
     try:
         with open(HISTORY_FILE, "r") as f:
@@ -36,125 +38,82 @@ def save_history(history):
     with open(HISTORY_FILE, "w") as f:
         json.dump(history, f, indent=2)
 
-# ====== Mini-dashboard ======
-def update_dashboard(post_id, url, message):
-    dashboard = []
+# ===== Dashboard đơn giản =====
+def update_dashboard(fb_id, url, snippet):
+    dash = []
     try:
         with open(DASHBOARD_FILE, "r") as f:
-            dashboard = json.load(f)
+            dash = json.load(f)
     except:
         pass
-    dashboard.append({
-        "facebook_id": post_id,
+    dash.append({
+        "fb_id": fb_id,
         "url": url,
-        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "snippet": message[:100]
+        "snippet": snippet,
+        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     })
     with open(DASHBOARD_FILE, "w") as f:
-        json.dump(dashboard, f, indent=2)
+        json.dump(dash, f, indent=2)
 
-# ====== Lấy bài mới từ một trang ======
-def get_posts_from_url(url):
+# ===== Quét bài từ từng trang =====
+def get_posts(url):
     try:
-        response = requests.get(url, timeout=10)
-        soup = BeautifulSoup(response.text, "html.parser")
-        articles = soup.find_all("article")  # Hoặc thẻ phù hợp với trang
-        posts = []
+        resp = requests.get(url, timeout=10)
+        soup = BeautifulSoup(resp.text, "html.parser")
+        # Lấy các thẻ bài viết phổ biến
+        candidates = soup.find_all(["article", "div"], class_=lambda x: x and "post" in x.lower())
         history = load_history()
-
-        for article in articles:
-            link_tag = article.find("a")
-            post_url = link_tag['href'] if link_tag else None
+        posts = []
+        for c in candidates:
+            link = c.find("a")
+            post_url = link['href'] if link and link.get('href') else None
             if not post_url or post_url in history:
                 continue
-            text = article.get_text(separator="\n").strip()
-            imgs = [img['src'] for img in article.find_all("img") if img.get('src')]
-            videos = [video['src'] for video in article.find_all("video") if video.get('src')]
-            posts.append({
-                "url": post_url,
-                "text": text,
-                "images": imgs,
-                "videos": videos
-            })
+            text = " ".join(p.get_text().strip() for p in c.find_all("p"))
+            posts.append({"url": post_url, "text": text})
         return posts
     except Exception as e:
-        print(f"Lỗi khi lấy bài từ {url}:", e)
+        print(f"Error crawling {url}:", e)
         return []
 
-# ====== Chọn hình/video đẹp nhất ======
-def choose_best_media(img_urls, video_urls):
-    best_img = None
-    max_size = 0
-    for url in img_urls:
-        try:
-            r = requests.get(url, stream=True, timeout=5)
-            size = int(r.headers.get('Content-Length', 0))
-            if size > max_size:
-                max_size = size
-                best_img = url
-        except:
-            continue
-    best_video = video_urls[0] if video_urls else None
-    return best_img, best_video
-
-# ====== Tạo nội dung bằng Gemini 1.5 Flash ======
-def generate_post(prompt):
+# ===== Tạo nội dung bằng Gemini =====
+def gen_content(prompt):
     try:
-        response = openai.chat.completions.create(
-            model="gemini-1.5-flash",
-            messages=[
-                {"role": "system", "content": "Bạn là chuyên gia viết nội dung Facebook hấp dẫn, ngắn gọn, thu hút người đọc."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-        return response.choices[0].message["content"]
+        res = model.generate_content(prompt)
+        return res.text
     except Exception as e:
-        print("Lỗi Gemini:", e)
+        print("Gemini lỗi:", e)
         return None
 
-def generate_post_versions(text):
-    prompt_short = f"Tóm tắt nội dung sau thành bài Facebook ngắn, thu hút: {text[:1000]}"
-    prompt_long = f"Tạo bài Facebook dài hơn, chi tiết, kèm hashtags: {text[:1500]}"
-    
-    short_post = generate_post(prompt_short)
-    long_post = generate_post(prompt_long)
-    
-    return short_post, long_post
+def create_variants(text):
+    short = gen_content(f"Tóm tắt nội dung sau thành bài Facebook ngắn, hấp dẫn: {text[:1000]}")
+    long = gen_content(f"Tạo bài Facebook dài hơn, chi tiết, có hashtags: {text[:1500]}")
+    return short, long
 
-# ====== Đăng bài lên Facebook ======
-def post_to_facebook(message, img_url=None, video_url=None):
+# ===== Đăng Facebook =====
+def post_facebook(msg):
     graph = facebook.GraphAPI(FACEBOOK_ACCESS_TOKEN)
     try:
-        if video_url:
-            post = graph.put_video(video=open(video_url, "rb"), title=message[:50], description=message)
-        elif img_url:
-            img_data = requests.get(img_url).content
-            post = graph.put_photo(image=img_data, message=message)
-        else:
-            post = graph.put_object(parent_object=FACEBOOK_PAGE_ID, connection_name='feed', message=message)
-        print("Đã đăng bài! ID:", post.get("id"))
+        post = graph.put_object(parent_object=FACEBOOK_PAGE_ID, connection_name='feed', message=msg)
+        print("Đăng thành công, ID:", post.get("id"))
         return post.get("id")
     except Exception as e:
-        print("Lỗi đăng bài Facebook:", e)
+        print("Lỗi đăng FB:", e)
         return None
 
-# ====== Quy trình auto post cho nhiều trang ======
-def auto_post_multi(urls):
-    for url in urls:
-        posts = get_posts_from_url(url)
-        if not posts:
-            print(f"Không có bài mới từ {url}")
-            continue
-        history = load_history()
-        for post in posts:
-            best_img, best_video = choose_best_media(post['images'], post['videos'])
-            short_post, long_post = generate_post_versions(post['text'])
-            final_post = long_post or short_post or post['text'][:500]
-            post_id = post_to_facebook(final_post, best_img, best_video)
-            if post_id:
-                history.append(post['url'])
+# ===== Quy trình chính =====
+def run_auto():
+    history = load_history()
+    for url in URLS_TO_SCRAPE:
+        posts = get_posts(url)
+        for p in posts:
+            short, long = create_variants(p["text"])
+            final = long or short or p["text"][:300]
+            fb_id = post_facebook(final)
+            if fb_id:
+                history.append(p["url"])
                 save_history(history)
-                update_dashboard(post_id, post['url'], final_post)
+                update_dashboard(fb_id, p["url"], final[:100])
 
 if __name__ == "__main__":
-    auto_post_multi(URLS_TO_SCRAPE)
+    run_auto()
