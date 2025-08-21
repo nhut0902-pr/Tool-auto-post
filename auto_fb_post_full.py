@@ -10,7 +10,7 @@ from datetime import datetime
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 FACEBOOK_ACCESS_TOKEN = os.environ.get("FACEBOOK_ACCESS_TOKEN")
 FACEBOOK_PAGE_ID = os.environ.get("FACEBOOK_PAGE_ID")
-URL_TO_SCRAPE = "https://example.com"  # Thay bằng trang web của bạn
+URL_TO_SCRAPE = "https://vnexpress.net/khoa-hoc-cong-nghe/ai"  # Thay bằng trang web của bạn
 HISTORY_FILE = "posted_history.json"
 DASHBOARD_FILE = "dashboard.json"
 
