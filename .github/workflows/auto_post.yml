@@ -2,14 +2,16 @@ name: Auto Post Multi Gemini
 
 on:
   schedule:
-    - cron: '0 */6 * * *'  # chạy mỗi 6 giờ
-  workflow_dispatch:       # cho phép chạy thủ công
+    - cron: '0 */6 * * *'  # Chạy mỗi 6 giờ
+  workflow_dispatch:         # Cho phép chạy thủ công
 
 jobs:
   post:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -20,6 +22,9 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install google-generativeai requests beautifulsoup4 facebook-sdk
+
+      - name: Debug - List files
+        run: ls -R
 
       - name: Run auto poster
         env:
